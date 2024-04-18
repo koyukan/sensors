@@ -2,11 +2,13 @@ import sys
 import websocket
 import json
 import numpy as np
-import pyqtgraph.opengl as gl
 from PyQt5 import QtWidgets, QtCore
 import pyqtgraph as pg
+import pyqtgraph.opengl as gl
+from pyqtgraph.opengl import GLMeshItem, GLScatterPlotItem
 from filterpy.kalman import ExtendedKalmanFilter
 from filterpy.common import Q_discrete_white_noise
+import math
 
 # Dictionary to store the latest readings
 latest_sensor_data = {
@@ -59,6 +61,47 @@ def setup_ekf():
 
     return ekf
 
+def calculate_laser_intersection(yaw, pitch, roll):
+    yaw_rad = math.radians(yaw)
+    pitch_rad = math.radians(pitch)
+    roll_rad = math.radians(roll)
+    
+    # Rotation matrices for each axis
+    R_yaw = np.array([
+        [math.cos(yaw_rad), -math.sin(yaw_rad), 0],
+        [math.sin(yaw_rad), math.cos(yaw_rad), 0],
+        [0, 0, 1]
+    ])
+    
+    R_pitch = np.array([
+        [math.cos(pitch_rad), 0, math.sin(pitch_rad)],
+        [0, 1, 0],
+        [-math.sin(pitch_rad), 0, math.cos(pitch_rad)]
+    ])
+    
+    R_roll = np.array([
+        [1, 0, 0],
+        [0, math.cos(roll_rad), -math.sin(roll_rad)],
+        [0, math.sin(roll_rad), math.cos(roll_rad)]
+    ])
+    
+    # Initial direction vector for the laser pointing forward
+    direction = np.array([0, 0, -1])
+    
+    # Apply rotations
+    direction = R_yaw @ R_pitch @ R_roll @ direction
+    
+    dx, dy, dz = direction
+    
+    if dz == 0:
+        return None
+    
+    # Assuming the plane is placed at z = -2500 (like a wall in front of the device)
+    t = -2500 / dz
+    x = t * dx
+    y = t * dy
+    return (x, y)
+
 class WebSocketThread(QtCore.QThread):
     data_received = QtCore.pyqtSignal(str)
 
@@ -89,21 +132,50 @@ class WebSocketThread(QtCore.QThread):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
+        
+        # Setup the Extended Kalman Filter
         self.ekf = setup_ekf()
+
+        # Setup the main OpenGL widget
         self.gl_widget = gl.GLViewWidget()
         self.setCentralWidget(self.gl_widget)
         self.gl_widget.setCameraPosition(distance=10, elevation=10, azimuth=0)
+
+        # Create and add the 3D cube representing the phone
         self.cube = gl.GLBoxItem()
-        self.cube.setSize(x=1, y=2, z=0.1)
-        self.cube.translate(-0.5, -1, -0.5)
+        self.cube.setSize(x=1, y=2, z=0.1)  # Dimensions of the cube
+        self.cube.translate(-0.5, -1, -0.5)  # Positioning the cube
         self.gl_widget.addItem(self.cube)
+
+        # Create and add a plane (wall) for the laser point to project onto
+        verts = np.array([
+            [-5000, -5000, -2500],
+            [5000, -5000, -2500],
+            [5000, 5000, -2500],
+            [-5000, 5000, -2500]
+        ])
+        faces = np.array([
+            [0, 1, 2],
+            [0, 2, 3]
+        ])
+        self.plane = GLMeshItem(vertexes=verts, faces=faces, color=(0.7, 0.7, 0.7, 0.5), drawEdges=True)
+        self.gl_widget.addItem(self.plane)
+
+        # Setup a scatter plot item to represent the laser point
+        self.laser_point = GLScatterPlotItem(pos=np.array([[0, 0, -2500]]), color=(1, 0, 0, 1), size=10)
+        self.gl_widget.addItem(self.laser_point)
+
+        # Setup a timer to update the cube orientation
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(100)
+        self.timer.setInterval(100)  # Update interval in milliseconds
         self.timer.timeout.connect(self.update_cube_orientation)
         self.timer.start()
+
+        # Setup the WebSocket thread for receiving sensor data
         self.thread = WebSocketThread('ws://10.0.0.128:8080/sensors/connect?types=["android.sensor.accelerometer","android.sensor.gyroscope","android.sensor.magnetic_field"]')
         self.thread.data_received.connect(self.handle_data)
         self.thread.start()
+
 
     def handle_data(self, message):
         data = json.loads(message)
@@ -153,6 +225,12 @@ class MainWindow(QtWidgets.QMainWindow):
         yaw_rad = np.radians(yaw)
         pitch_rad = np.radians(pitch)
         roll_rad = np.radians(roll)
+
+        laser_pos = calculate_laser_intersection(yaw, pitch, roll)
+        if laser_pos:
+            self.laser_point.setData(pos=np.array([[laser_pos[0], laser_pos[1], -2500]]))
+
+
         rot_yaw = np.array([
             [np.cos(yaw_rad), -np.sin(yaw_rad), 0, 0],
             [np.sin(yaw_rad), np.cos(yaw_rad), 0, 0],
