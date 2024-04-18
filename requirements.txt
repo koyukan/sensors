@@ -8,3 +8,5 @@ PyQt5
 pyqtgraph
 PyOpenGL 
 PyOpenGL_accelerate
+filterpy
+ 
