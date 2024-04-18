@@ -1,0 +1,10 @@
+pandas
+matplotlib
+numpy
+tk
+websocket-client
+pynput
+PyQt5
+pyqtgraph
+PyOpenGL 
+PyOpenGL_accelerate
