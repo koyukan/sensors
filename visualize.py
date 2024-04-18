@@ -70,12 +70,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.gl_widget)
 
         # Adjust the view to look from top
-        self.gl_widget.setCameraPosition(distance=10, elevation=90, azimuth=0)
+        self.gl_widget.setCameraPosition(distance=10, elevation=10, azimuth=0)
 
         # Create a 3D rectangular prism resembling a phone
         self.cube = gl.GLBoxItem()
         self.cube.setSize(x=1, y=2, z=0.1)  # Phone-like dimensions, where y is length, x is width, and z is thickness
-        self.cube.translate(0.5, 1, 0.05)  # Adjust to center the box
+        self.cube.translate(-0.5, -1, -0.5)
         self.gl_widget.addItem(self.cube)
 
         self.timer = QtCore.QTimer()
@@ -96,14 +96,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def update_cube_orientation(self):
         if all(latest_sensor_data.values()):
-            pitch, roll = calculate_pitch_roll(normalize(np.array(latest_sensor_data['android.sensor.accelerometer'])))
-            yaw = calculate_yaw(normalize(np.array(latest_sensor_data['android.sensor.magnetic_field'])), pitch, roll)
+            accel = normalize(np.array(latest_sensor_data['android.sensor.accelerometer']))
+            mag = normalize(np.array(latest_sensor_data['android.sensor.magnetic_field']))
+            pitch, roll = calculate_pitch_roll(accel)
+            yaw = calculate_yaw(mag, pitch, roll)
 
             # Calculate rotations
-            yaw_rad = np.radians(yaw)
+            # yaw_rad = np.radians(yaw)
+            yaw_rad = np.radians(0)  # For now, we will not use the yaw value
             pitch_rad = np.radians(pitch)
             roll_rad = np.radians(roll)
 
+            # Create rotation matrices for yaw, pitch, and roll
             rot_yaw = np.array([
                 [np.cos(yaw_rad), -np.sin(yaw_rad), 0, 0],
                 [np.sin(yaw_rad), np.cos(yaw_rad), 0, 0],
@@ -123,14 +127,30 @@ class MainWindow(QtWidgets.QMainWindow):
                 [0, 0, 0, 1]
             ])
 
-            # Multiply rotation matrices
+            # Multiply rotation matrices: Note the order of multiplication matters!
             rotation_matrix = np.linalg.multi_dot([rot_yaw, rot_pitch, rot_roll])
 
-            # Flatten the matrix and correctly pass it to Transform3D
-            flattened_matrix = rotation_matrix.flatten()
-            transform = pg.Transform3D(*flattened_matrix)  # Unpack the flattened array
-            self.cube.setTransform(transform)
+            # Combine translation to origin, rotation, and back translation
+            translate_to_origin = np.array([
+                [1, 0, 0, 0.5],  # Move back by half width
+                [0, 1, 0, 1.0],   # Move back by half height
+                [0, 0, 1, 0.05],  # Move back by half depth
+                [0, 0, 0, 1]
+            ])
+            translate_back = np.array([
+                [1, 0, 0, -0.5],  # Move to origin
+                [0, 1, 0, -1.0],  # Move to origin
+                [0, 0, 1, -0.05], # Move to origin
+                [0, 0, 0, 1]
+            ])
 
+            # Complete transformation matrix
+            full_transformation_matrix = np.dot(translate_to_origin, np.dot(rotation_matrix, translate_back))
+
+            # Flatten the matrix and apply transformation
+            flattened_matrix = full_transformation_matrix.flatten()
+            transform = pg.Transform3D(*flattened_matrix)
+            self.cube.setTransform(transform)
 
 
 if __name__ == "__main__":
