@@ -66,41 +66,42 @@ def calculate_laser_intersection(yaw, pitch, roll):
     pitch_rad = math.radians(pitch)
     roll_rad = math.radians(roll)
     
-    # Rotation matrices for each axis
+    # Define the transformation for rotations
     R_yaw = np.array([
         [math.cos(yaw_rad), -math.sin(yaw_rad), 0],
         [math.sin(yaw_rad), math.cos(yaw_rad), 0],
         [0, 0, 1]
     ])
-    
     R_pitch = np.array([
         [math.cos(pitch_rad), 0, math.sin(pitch_rad)],
         [0, 1, 0],
         [-math.sin(pitch_rad), 0, math.cos(pitch_rad)]
     ])
-    
     R_roll = np.array([
         [1, 0, 0],
         [0, math.cos(roll_rad), -math.sin(roll_rad)],
         [0, math.sin(roll_rad), math.cos(roll_rad)]
     ])
-    
-    # Initial direction vector for the laser pointing forward
-    direction = np.array([0, 0, -1])
-    
-    # Apply rotations
+
+    # Initial direction vector for the laser pointing forward from the top of the phone
+    direction = np.array([0, 1, 0])  # Pointing along the y-axis from the top side
+
+    # Apply the rotation matrices to the direction vector
     direction = R_yaw @ R_pitch @ R_roll @ direction
     
+    # Calculate dx, dy, dz components of the laser direction
     dx, dy, dz = direction
     
     if dz == 0:
-        return None
+        return None  # Avoid division by zero if laser points parallel to the plane
     
-    # Assuming the plane is placed at z = -2500 (like a wall in front of the device)
-    t = -2500 / dz
-    x = t * dx
-    y = t * dy
+    # Calculate intersection with the plane z = -2500
+    t = (-2500 - (-0.5)) / dz  # Adjust starting z position to -0.5 (top of the cube)
+    x = -0.5 + t * dx  # Adjust starting x position to -0.5 (center of the cube)
+    y = 1 + t * dy  # Start from y = 1 (top of the cube)
+
     return (x, y)
+
 
 class WebSocketThread(QtCore.QThread):
     data_received = QtCore.pyqtSignal(str)
