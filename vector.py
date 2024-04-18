@@ -89,8 +89,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Create and add the 3D cube representing the phone
         self.cube = gl.GLBoxItem()
-        self.cube.setSize(x=1, y=1, z=0.3)
-        self.cube.translate(-0.5, -0.5, 0)
+        self.cube.setSize(x=1, y=2, z=0.1)  # Dimensions of the cube
+        self.cube.translate(-0.5, -1, -0.5) 
         self.gl_widget.addItem(self.cube)
 
         # Setup the WebSocket thread for receiving sensor data
@@ -112,9 +112,14 @@ class MainWindow(QtWidgets.QMainWindow):
         rotation_matrix_4x4 = np.eye(4)  # Start with an identity matrix
         rotation_matrix_4x4[:3, :3] = rotation_matrix  # Place the 3x3 matrix in the top-left
 
-        # Create the QMatrix4x4 from the 4x4 matrix
-        transform = QtGui.QMatrix4x4(*rotation_matrix_4x4.flatten())
+        # Update transformation considering the cube's geometric center
+        transform = QtGui.QMatrix4x4()
+        transform.translate(-0.5, -1, -0.5)  # Translate to center the cube
+        transform *= QtGui.QMatrix4x4(*rotation_matrix_4x4.flatten())  # Apply rotation
+        transform.translate(-0.5, -1, -0.5)  # Translate back
+
         self.cube.setTransform(transform)
+
 
 
 if __name__ == "__main__":
