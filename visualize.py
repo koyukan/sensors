@@ -12,9 +12,8 @@ import math
 
 # Dictionary to store the latest readings
 latest_sensor_data = {
-    'android.sensor.gyroscope': None,
     'android.sensor.accelerometer': None,
-    'android.sensor.magnetic_field': None,
+    'android.sensor.gyroscope': None,
 }
 
 def normalize(v):
@@ -29,44 +28,13 @@ def calculate_pitch_roll(accel):
     roll = np.arctan2(ay, az)
     return np.degrees(pitch), np.degrees(roll)  # Convert radians to degrees
 
-def calculate_yaw(mag, pitch, roll):
-    mx, my, mz = mag
-    roll_rad = np.radians(roll)
-    pitch_rad = np.radians(pitch)
-    mx_prime = mx * np.cos(roll_rad) + my * np.sin(pitch_rad) * np.sin(roll_rad) + mz * np.cos(pitch_rad) * np.sin(roll_rad)
-    my_prime = my * np.cos(pitch_rad) - mz * np.sin(pitch_rad)
-    yaw = np.arctan2(-my_prime, mx_prime)
-    return np.degrees(yaw)  # Convert radians to degrees
-
-def setup_ekf():
-    ekf = ExtendedKalmanFilter(dim_x=6, dim_z=6)
-    ekf.x = np.zeros(6)  # initial state: [yaw, pitch, roll, gyro_x, gyro_y, gyro_z]
-    ekf.F = np.eye(6)  # State transition matrix
-    ekf.H = np.eye(6)  # Measurement matrix
-    ekf.P *= 100  # Initial state covariance, a larger value reflects initial uncertainty
-
-    # Measurement noise covariance matrix (assuming equal uncertainty for all measurements)
-    ekf.R = np.eye(6) * 0.5
-
-    # Process noise covariance matrix
-    # Adjust these variances based on your estimation of how much noise is in each state variable
-    var_yaw = 0.1   # Variance for yaw
-    var_pitch = 0.1 # Variance for pitch
-    var_roll = 0.1  # Variance for roll
-    var_gyro_x = 0.01  # Variance for gyroscopic data on x-axis
-    var_gyro_y = 0.01  # Variance for gyroscopic data on y-axis
-    var_gyro_z = 0.01  # Variance for gyroscopic data on z-axis
-
-    ekf.Q = np.diag([var_yaw, var_pitch, var_roll, var_gyro_x, var_gyro_y, var_gyro_z])
-
-    return ekf
-
-def calculate_laser_intersection(yaw, pitch, roll):
+def calculate_laser_intersection(yaw, pitch, roll, p=-2500):
+    """ Calculate the intersection of the laser with a plane at z = p. """
     yaw_rad = math.radians(yaw)
     pitch_rad = math.radians(pitch)
     roll_rad = math.radians(roll)
     
-    # Define the transformation for rotations
+    # Rotation matrices
     R_yaw = np.array([
         [math.cos(yaw_rad), -math.sin(yaw_rad), 0],
         [math.sin(yaw_rad), math.cos(yaw_rad), 0],
@@ -82,26 +50,43 @@ def calculate_laser_intersection(yaw, pitch, roll):
         [0, math.cos(roll_rad), -math.sin(roll_rad)],
         [0, math.sin(roll_rad), math.cos(roll_rad)]
     ])
-
-    # Initial direction vector for the laser pointing forward from the top of the phone
-    direction = np.array([0, 1, 0])  # Pointing along the y-axis from the top side
-
-    # Apply the rotation matrices to the direction vector
-    direction = R_yaw @ R_pitch @ R_roll @ direction
     
-    # Calculate dx, dy, dz components of the laser direction
+    # Apply rotations to a forward-pointing vector
+    direction = np.array([0, 0, 1])  # Assuming the laser points forward
+    direction = R_yaw @ R_pitch @ R_roll @ direction
     dx, dy, dz = direction
     
     if dz == 0:
-        return None  # Avoid division by zero if laser points parallel to the plane
+        return None  # Prevent division by zero if laser points parallel to the plane
     
-    # Calculate intersection with the plane z = -2500
-    t = (-2500 - (-0.5)) / dz  # Adjust starting z position to -0.5 (top of the cube)
-    x = -0.5 + t * dx  # Adjust starting x position to -0.5 (center of the cube)
-    y = 1 + t * dy  # Start from y = 1 (top of the cube)
-
+    t = p / dz  # Solve for intersection with plane
+    x = t * dx
+    y = t * dy
     return (x, y)
 
+def setup_ekf():
+    ekf = ExtendedKalmanFilter(dim_x=6, dim_z=6)
+    ekf.x = np.zeros(6)  # initial state: [yaw, pitch, roll, gyro_x, gyro_y, gyro_z]
+    ekf.F = np.eye(6)  # State transition matrix
+    ekf.H = np.eye(6)  # Measurement matrix
+    ekf.P *= 100  # Initial state covariance, a larger value reflects initial uncertainty
+
+    # Measurement noise covariance matrix (assuming equal uncertainty for all measurements)
+    ekf.R = np.eye(6) * 0.5
+
+    # Process noise covariance matrix
+    # Define the variances for each of the state variables
+    var_yaw = 0.1   # Variance for yaw
+    var_pitch = 0.1 # Variance for pitch
+    var_roll = 0.1  # Variance for roll
+    var_gyro_x = 0.01  # Variance for gyroscopic data on x-axis
+    var_gyro_y = 0.01  # Variance for gyroscopic data on y-axis
+    var_gyro_z = 0.01  # Variance for gyroscopic data on z-axis
+
+    # Constructing a diagonal covariance matrix directly
+    ekf.Q = np.diag([var_yaw, var_pitch, var_roll, var_gyro_x, var_gyro_y, var_gyro_z])
+
+    return ekf
 
 class WebSocketThread(QtCore.QThread):
     data_received = QtCore.pyqtSignal(str)
@@ -111,11 +96,7 @@ class WebSocketThread(QtCore.QThread):
         self.url = url
 
     def run(self):
-        self.ws = websocket.WebSocketApp(self.url,
-                                         on_open=self.on_open,
-                                         on_message=self.on_message,
-                                         on_error=self.on_error,
-                                         on_close=self.on_close)
+        self.ws = websocket.WebSocketApp(self.url, on_open=self.on_open, on_message=self.on_message, on_error=self.on_error, on_close=self.on_close)
         self.ws.run_forever()
 
     def on_message(self, ws, message):
@@ -148,12 +129,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cube.translate(-0.5, -1, -0.5)  # Positioning the cube
         self.gl_widget.addItem(self.cube)
 
-        # Create and add a plane (wall) for the laser point to project onto
+        # Adjust the plane for laser point projection
+        plane_z = -2500  # Distance from the origin along the z-axis
         verts = np.array([
-            [-5000, -5000, -2500],
-            [5000, -5000, -2500],
-            [5000, 5000, -2500],
-            [-5000, 5000, -2500]
+            [-5000, -5000, plane_z],
+            [5000, -5000, plane_z],
+            [5000, 5000, plane_z],
+            [-5000, 5000, plane_z]
         ])
         faces = np.array([
             [0, 1, 2],
@@ -163,7 +145,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gl_widget.addItem(self.plane)
 
         # Setup a scatter plot item to represent the laser point
-        self.laser_point = GLScatterPlotItem(pos=np.array([[0, 0, -2500]]), color=(1, 0, 0, 1), size=10)
+        self.laser_point = GLScatterPlotItem(pos=np.array([[0, 0, plane_z]]), color=(1, 0, 0, 1), size=10)
         self.gl_widget.addItem(self.laser_point)
 
         # Setup a timer to update the cube orientation
@@ -173,10 +155,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timer.start()
 
         # Setup the WebSocket thread for receiving sensor data
-        self.thread = WebSocketThread('ws://10.0.0.128:8080/sensors/connect?types=["android.sensor.accelerometer","android.sensor.gyroscope","android.sensor.magnetic_field"]')
+        self.thread = WebSocketThread('ws://10.0.0.128:8080/sensors/connect?types=["android.sensor.accelerometer","android.sensor.gyroscope"]')
         self.thread.data_received.connect(self.handle_data)
         self.thread.start()
-
 
     def handle_data(self, message):
         data = json.loads(message)
@@ -189,27 +170,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if all(latest_sensor_data.values()):
             accel = np.array(latest_sensor_data['android.sensor.accelerometer'])
             gyro = np.array(latest_sensor_data['android.sensor.gyroscope'])
-            mag = np.array(latest_sensor_data['android.sensor.magnetic_field'])
 
-            # Normalize accelerometer and magnetometer data
+            # Normalize accelerometer data
             accel_normalized = normalize(accel)
-            mag_normalized = normalize(mag)
 
-            # Calculate pitch, roll, and yaw from accelerometer and magnetometer
+            # Calculate pitch and roll from accelerometer
             pitch, roll = calculate_pitch_roll(accel_normalized)
-            yaw = calculate_yaw(mag_normalized, pitch, roll)
-
-            # Prepare the measurement vector z
-            z = np.array([yaw, pitch, roll, *gyro])
+            
+            # Assume a placeholder yaw value or another way to compute it
+            yaw = 0  # Placeholder, update accordingly
+            
+            # Prepare the measurement vector z, ensure it matches expected dimension
+            z = np.array([yaw, pitch, roll, *gyro])  # Now z should be of length 6
 
             # Predict the next state
             self.ekf.predict()
 
-            # Update the EKF with the new measurements, HJacobian, and Hx
+            # Update the EKF with the new measurements
             self.ekf.update(z, self.HJacobian_at, self.Hx)
 
             # Apply the new orientation to the cube
             self.update_cube_orientation()
+
 
     @staticmethod
     def HJacobian_at(x):
@@ -227,10 +209,9 @@ class MainWindow(QtWidgets.QMainWindow):
         pitch_rad = np.radians(pitch)
         roll_rad = np.radians(roll)
 
-        laser_pos = calculate_laser_intersection(yaw, pitch, roll)
+        laser_pos = calculate_laser_intersection(yaw, pitch, roll, p=-2500)
         if laser_pos:
             self.laser_point.setData(pos=np.array([[laser_pos[0], laser_pos[1], -2500]]))
-
 
         rot_yaw = np.array([
             [np.cos(yaw_rad), -np.sin(yaw_rad), 0, 0],
