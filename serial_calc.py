@@ -60,25 +60,43 @@ class MainWindow(QtWidgets.QMainWindow):
 
     
     def update_plot_data(self):
-        
-        # limit lists data to 1000 items 
-        limit = -100 
-        
-        #Get max value of x and z data
+        if not self.x_data or not self.z_data:  # Check if lists are empty
+            return
+
+        limit = -100  # limit the number of points to display
+
+        # Get max and min values safely
         max_x = max(self.x_data)
         max_z = max(self.z_data)
-        #Get min value of x and z data
         min_x = min(self.x_data)
         min_z = min(self.z_data)
 
-        # Update the data.
+        # Update the data in the plot
         self.x_data_line.setData(self.x_data[limit:], self.z_data[limit:])  
-        self.graphWidget.setXRange(min_x -5 , max_x +5)
-        self.graphWidget.setYRange(min_z  -5 , max_z +5)
+        self.graphWidget.setXRange(min_x - 5, max_x + 5)
+        self.graphWidget.setYRange(min_z - 5, max_z + 5)
+
+    def on_calibration(self, message):
+        # Handle calibration messages here
+        print("Handling calibration message:", message)
+        # You could update some status indicators in your application's UI, for example
         
+        
+    
     def handle_data(self,message):
-        data = list(map(float, message.split()))
-        roll, pitch, yaw = data[:3]
+        
+        try:
+            roll = float(message[:6].strip())
+            pitch = float(message[6:12].strip())
+            yaw = float(message[12:18].strip())
+
+            print("Roll:", roll)
+            print("Pitch:", pitch)
+            print("Yaw:", yaw)
+        except ValueError:
+            print("Error: One of the values is not a valid number.")
+            print ("Message: ", message)
+
        
          #Get epoch time in miliseconds for the data
         epoch_time = float(time.time())
@@ -233,22 +251,22 @@ def relative_vector(xd, yd, zd, yaw, roll, pitch ,p ):
 
 
 if __name__ == "__main__":
-
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.show()
-        # Create an instance of EulerSerial
-    euler_reader = EulerSerial('/dev/ttyACM0', baud_rate=921600)
+
+    # Create an instance of EulerSerial
+    euler_reader = EulerSerial('/dev/ttyACM1', baud_rate=921600)
     # Start reading
     euler_reader.start_reading()
     euler_reader.set_on_data_handler(window.handle_data)
+    euler_reader.set_on_calibration_start_handler(window.on_calibration)
+    euler_reader.set_on_calibration_end_handler(window.on_calibration)
 
-    try:
-        # Keep the main thread running, otherwise Python will exit
-        input("Press enter to stop...\n")
-    except KeyboardInterrupt:
-        # If user interrupts the program (e.g., by pressing Ctrl+C), stop reading and close the port
-        euler_reader.stop_reading()
-        euler_reader.close()
-        print("Stopped reading and closed the serial port.")
-        sys.exit(app.exec_())
+    # Handle user input to exit gracefully
+    input("Press enter to stop...\n")
+    euler_reader.stop_reading()
+    euler_reader.close()
+    print("Stopped reading and closed the serial port.")
+    sys.exit(app.exec_())
+
