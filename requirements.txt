@@ -10,5 +10,6 @@ PyOpenGL
 PyOpenGL_accelerate
 filterpy
 pyserial
+ahrs
 
  
