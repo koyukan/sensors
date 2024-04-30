@@ -5,12 +5,14 @@ import websocket
 
 
 class SensorDataHandler:
-    def __init__(self, address, sensors, debugLevel=0):
+    def __init__(self, address, sensors, debugLevel=0, notify_synchronously=False):
         self.address = address
         self.sensors = sensors
         self.debugLevel = debugLevel
         self.ws = None
         self.callbacks = []
+        self.notify_synchronously = notify_synchronously
+        self.increment = 0
         '''
         {"values":[11.1875,-24.1875,-35.8125],"timestamp":1238531443928498,"accuracy":3,"type":"android.sensor.magnetic_field"}
         {"values":[0.20770179,3.1304858,9.954047],"timestamp":1238531439468498,"accuracy":3,"type":"android.sensor.accelerometer"}
@@ -38,16 +40,15 @@ class SensorDataHandler:
 
         '''
         self.latest_sensor_data = {
-            'timestamp': 0,
-            'gyro': [0, 0, 0],
-            'accel': [0, 0, 0],
-            'mag': [0, 0, 0]
+            'timestamp': None,
+            'gyro': None,
+            'accel': None,
+            'mag': None,
         }
         
     def log(self, message, level=1):
         if level <= self.debugLevel:
             print(message)
-
 
     def on_message(self, ws, message):
         self.log(f"Message received: {message}", 2)
@@ -68,9 +69,24 @@ class SensorDataHandler:
             self.latest_sensor_data['mag'] = values
   
         self.latest_sensor_data['timestamp'] = timestamp
-            
-        self.notify_callbacks(self.latest_sensor_data)
 
+        # Check if all sensor data has arrived
+
+        if (self.latest_sensor_data['gyro'] is not None and self.latest_sensor_data['accel'] is not None and self.latest_sensor_data['mag'] is not None):
+
+            self.notify_callbacks(self.latest_sensor_data)
+            self.increment = 0
+            #if self.notify_synchronously: flush the data
+            if self.notify_synchronously:
+                self.latest_sensor_data = {
+                    'timestamp': None,
+                    'gyro': None,
+                    'accel': None,
+                    'mag': None,
+                }
+        else:
+            self.log("Waiting for all sensor data to arrive", 3)
+            self.increment += 1
 
     def notify_callbacks(self, data):
         for callback in self.callbacks:
