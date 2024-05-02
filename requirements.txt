@@ -11,6 +11,7 @@ PyOpenGL_accelerate
 filterpy
 pyserial
 ahrs
+imufusion
 
 
  
