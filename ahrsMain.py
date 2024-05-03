@@ -8,6 +8,8 @@ from ahrs.filters import Madgwick
 from ahrsPhoneSensor import SensorDataHandler
 from ahrs_colored import ColoredGLBoxItem
 from ahrs_Mad import AhrsProcessor
+import asyncio
+import qasync
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -206,8 +208,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
+    loop = qasync.QEventLoop(app)
+    asyncio.set_event_loop(loop)  
     handler = SensorDataHandler("10.0.0.128:8080", ["android.sensor.accelerometer", "android.sensor.gyroscope", "android.sensor.magnetic_field"], debugLevel=0, notify_synchronously=True)
     window = MainWindow(handler, algorithm='AHRS')
     window.show()
-    handler.connect()
-    sys.exit(app.exec_())
+    with loop:
+            loop.run_until_complete(handler.connect())
+            sys.exit(app.exec_())

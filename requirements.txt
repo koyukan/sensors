@@ -12,6 +12,6 @@ filterpy
 pyserial
 ahrs
 imufusion
-
-
+websockets
+qasync
  

@@ -55,6 +55,7 @@ class AhrsProcessor:
 
         # Package output data
         output_data = {
+            'timestamp': timestamp,
             'quaternion': quaternion_matrix,
             'euler_angles': euler_angles,
             'internal_states': {
