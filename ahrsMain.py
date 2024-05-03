@@ -17,7 +17,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.handler.add_callback(self.sensor_callback)
         self.algorithm = algorithm
         self.madgwick_filter = Madgwick(gain_imu=0.01, gain_marg=0.041)
-        self.ahrs_processor = AhrsProcessor(sample_rate=10)
+        self.ahrs_processor = AhrsProcessor(sample_rate=10, gain=0.041, gyroscope_range=2000, acceleration_rejection=100, magnetic_rejection=100, recovery_trigger_period=5*10)
         self.setWindowTitle("Sensor Data Visualization")
         self.central_widget = QtWidgets.QWidget()
         self.setCentralWidget(self.central_widget)
@@ -46,6 +46,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if len(self.sensor_store) > self.maxDataPoints:
             self.sensor_store = self.sensor_store[-self.maxDataPoints:]
     
+    def add_euler_angles(self, euler_angles):
+        self.eulerAngles_store.append(euler_angles)
+        if len(self.eulerAngles_store) > self.maxDataPoints:
+            self.eulerAngles_store = self.eulerAngles_store[-self.maxDataPoints:]
     
     def update_views(self):
         timestamps = np.array([data[0] for data in self.quaternion_store])
@@ -93,13 +97,12 @@ class MainWindow(QtWidgets.QMainWindow):
         timestamp=data['timestamp']
         )
 
-        print("Processed Data:", ahrs_data)
 
         # Store the quaternion
         #self.add_quaternion((data['timestamp'],  quaternion))
 
         # Store the Euler angles
-        self.eulerAngles_store.append((data['timestamp'], ahrs_data['euler_angles']))
+        self.add_euler_angles((data['timestamp'], ahrs_data['euler_angles']))
 
         self.cube.resetTransform()
         # Apply rotations in sequence: Roll about X, Pitch about Y, Yaw about Z
@@ -107,9 +110,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cube.rotate(ahrs_data['euler_angles'][1], 0.0, 1.0, 0.0)  # Pitch
         self.cube.rotate(ahrs_data['euler_angles'][2], 0.0, 0.0, 1.0)  # Yaw
 
-        # Compare quaternion from Madgwick filter with quaternion from AHRS processor
-        #print("Quaternion from Madgwick filter: ", quaternion)
-        print("Quaternion from AHRS processor: ", ahrs_data['quaternion'])
+
 
 
         internal_states = ahrs_data['internal_states']

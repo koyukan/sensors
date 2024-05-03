@@ -26,19 +26,10 @@ class AhrsProcessor:
 
     def process_sensor_data(self, gyro, accel, mag, timestamp):
         
-        # Print all data for verification
-        print(f"gyro: {gyro}")
-        print(f"accel: {accel}")
-        print(f"mag: {mag}")
-       
+       # Convert to microseconds
+        timestamp = timestamp / 1e9  
 
-        
-        # Assuming timestamp is in seconds, calculate delta time
-        timestamp = timestamp / 1e9  # Convert to microseconds
-
-        # print calibrated time 
-
-        print(f"timestamp: {timestamp}")
+        # Calculate delta time
         if not hasattr(self, 'last_timestamp'):
             self.last_timestamp = timestamp
             delta_time = 0
@@ -62,8 +53,6 @@ class AhrsProcessor:
         internal_states = self.ahrs.internal_states
         flags = self.ahrs.flags
 
-
-        print   (euler_angles)
         # Package output data
         output_data = {
             'quaternion': quaternion_matrix,
