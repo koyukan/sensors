@@ -47,7 +47,9 @@ class AhrsProcessor:
         # Get the quaternion and convert to Euler angles
         quaternion = self.ahrs.quaternion
         euler_angles = quaternion.to_euler()  # Returns Euler angles in degrees
-        quaternion_matrix = quaternion = quaternion.wxyz
+        quaternion_matrix =  np.array(quaternion.wxyz) 
+
+       
 
         # Retrieve internal states and flags
         internal_states = self.ahrs.internal_states
