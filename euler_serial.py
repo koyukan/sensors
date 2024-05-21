@@ -1,125 +1,93 @@
-import serial
-import threading
-import time
+import asyncio
+import serial_asyncio
 
 class EulerSerial:
     def __init__(self, port, baud_rate=115200):
-        """
-        Initialize the serial connection.
-        :param port: The port to connect to, e.g., '/dev/ttyACM0'.
-        :param baud_rate: The baud rate for the serial connection. Default is 115200.
-        """
         self.port = port
         self.baud_rate = baud_rate
-        self.ser = None
-        self.initialize_serial()
+        self.reader = None
+        self.writer = None
         self.on_data = None
         self.on_calibration_start = None
         self.on_calibration_end = None
         self.running = False
 
-    def initialize_serial(self):
-        while self.ser is None:
+    async def initialize_serial(self):
+        while self.reader is None or self.writer is None:
             try:
-                self.ser = serial.Serial(self.port, self.baud_rate)
-                self.ser.flushInput()
+                self.reader, self.writer = await serial_asyncio.open_serial_connection(
+                    url=self.port, baudrate=self.baud_rate
+                )
                 print("Connected successfully to", self.port)
-            except serial.SerialException as e:
+            except serial.serialutil.SerialException as e:
                 print(f"Failed to connect to {self.port}: {e}. Retrying in 5 seconds...")
-                time.sleep(1)
+                await asyncio.sleep(5)
 
     def set_on_data_handler(self, handler):
-        """
-        Set the function that will be called when new sensor data is received.
-        :param handler: A function to call with the new data.
-        """
         self.on_data = handler
 
     def set_on_calibration_start_handler(self, handler):
-        """
-        Set the function that will be called when calibration starts.
-        :param handler: A function to call with the start calibration message.
-        """
         self.on_calibration_start = handler
 
     def set_on_calibration_end_handler(self, handler):
-        """
-        Set the function that will be called when calibration ends.
-        :param handler: A function to call with the end calibration message.
-        """
         self.on_calibration_end = handler
 
-    def start_reading(self):
-        """
-        Start reading data from the serial port in a separate thread.
-        """
+    async def start_reading(self):
+        await self.initialize_serial()
         self.running = True
-        thread = threading.Thread(target=self._read_loop)
-        thread.start()
+        asyncio.create_task(self._read_loop())
 
-    def _read_loop(self):
-        """
-        Continuously reads data from the serial port in a dedicated thread, handling different types of messages.
-        """
+    async def _read_loop(self):
         while self.running:
             try:
-                if self.ser and self.ser.in_waiting > 0:
-                    data = self.ser.readline().decode('utf-8').strip()
-                    # Handle start of compass calibration
+                if self.reader:
+                    data = await self.reader.readline()
+                    data = data.decode('utf-8').strip()
+                    
                     if "Start compass calibration" in data:
                         if self.on_calibration_start:
-                            self.on_calibration_start(data)
+                            asyncio.create_task(self.on_calibration_start(data))
                         print("Compass calibration has started.")
                     
-                    # Handle end of compass calibration
                     elif "End of compass calibration" in data:
                         if self.on_calibration_end:
-                            self.on_calibration_end("Compass calibration completed successfully.")
+                            asyncio.create_task(self.on_calibration_end("Compass calibration completed successfully."))
                         print("Compass calibration has ended successfully.")
                     
-                    # Informative logging for accelerometer and gyroscope calibration
                     elif "Calibrating Accelerometer and Gyroscope" in data:
                         print("Calibration of Accelerometer and Gyroscope has started.")
                     
-                    # Informative logging for the end of accelerometer and gyroscope calibration
                     elif "Accelerometer & Gyro calibration complete" in data:
                         print("Accelerometer and Gyroscope calibration completed successfully.")
                     
-                    # Log any specific biases detected during calibration
                     elif "Acc Bias" in data:
                         print("Calibration biases:", data)
                     
-                    # Log the empty line between calibration and sensor data
                     elif data == "":
-                        print("End of calibration cycle.")
+                        print("Received empty line.")
 
-                    # Handle regular sensor data
                     elif self.on_data:
-                        self.on_data(data)
+                        print("Data:", data)
+                        data_split = data.split()
+                        dict_data = {
+                            "timestamp": int(data_split[0]),
+                            "accel": [float(data_split[1]), float(data_split[2]), float(data_split[3])],
+                            "gyro": [float(data_split[4]), float(data_split[5]), float(data_split[6])],
+                            "mag": [float(data_split[7]), float(data_split[8]), float(data_split[9])]
+                        }
+                        asyncio.create_task(self.on_data(dict_data))
                     
-            except (serial.SerialException, OSError) as e:
-                # Log the error and attempt to reconnect
+            except (serial.serialutil.SerialException, OSError) as e:
                 print("Connection lost... attempting to reconnect. Error:", e)
-                self.ser.close()  # Properly close the connection
-                self.ser = None
-                # Attempt to reconnect until successful
-                while self.ser is None:
-                    time.sleep(5)
-                    self.initialize_serial()
+                self.reader = None
+                self.writer = None
+                await self.initialize_serial()
 
-
-
-
-    def stop_reading(self):
-        """
-        Stop the reading loop.
-        """
+    async def stop_reading(self):
         self.running = False
 
-    def close(self):
-        """
-        Close the serial connection.
-        """
-        self.stop_reading()
-        if self.ser:
-            self.ser.close()
+    async def close(self):
+        await self.stop_reading()
+        if self.writer:
+            self.writer.close()
+            await self.writer.wait_closed()

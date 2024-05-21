@@ -16,6 +16,7 @@ class SensorDataHandler:
             'gyro': None,
             'accel': None,
             'mag': None,
+            'orientation': None,
         }
 
     def log(self, message, level=1):
@@ -39,10 +40,13 @@ class SensorDataHandler:
         elif sensor_type == 'android.sensor.magnetic_field':
             self.log(f"mag data: {data}", 3)
             self.latest_sensor_data['mag'] = values
+        elif sensor_type == 'android.sensor.orientation':
+            self.log(f"orientation data: {data}", 3)
+            self.latest_sensor_data['orientation'] = values
         
         self.latest_sensor_data['timestamp'] = timestamp
 
-        if all(self.latest_sensor_data[key] is not None for key in ['gyro', 'accel', 'mag']):
+        if all(self.latest_sensor_data[key] is not None for key in ['gyro', 'accel', 'mag', 'orientation']):
             await self.notify_callbacks(self.latest_sensor_data)
             if self.notify_synchronously:
                 self.latest_sensor_data = {
@@ -50,6 +54,7 @@ class SensorDataHandler:
                     'gyro': None,
                     'accel': None,
                     'mag': None,
+                    'orientation': None,
                 }
 
     async def notify_callbacks(self, data):

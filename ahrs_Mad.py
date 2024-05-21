@@ -24,10 +24,9 @@ class AhrsProcessor:
         except TypeError as e:
             print(f"Error initializing settings: {e}")
 
-    def process_sensor_data(self, gyro, accel, mag, timestamp):
+    def process_sensor_data(self, gyro, accel, mag, orientation = None, timestamp = None):
         
-       # Convert to microseconds
-        timestamp = timestamp / 1e9  
+    
 
         # Calculate delta time
         if not hasattr(self, 'last_timestamp'):
@@ -48,7 +47,7 @@ class AhrsProcessor:
         quaternion = self.ahrs.quaternion
         euler_angles = quaternion.to_euler()  # Returns Euler angles in degrees
         quaternion_matrix =  np.array(quaternion.wxyz) 
-
+        
        
 
         # Retrieve internal states and flags
@@ -75,5 +74,8 @@ class AhrsProcessor:
                 'magnetic_recovery': flags.magnetic_recovery
             }
         }
+
+        if orientation is not None:
+            output_data['orientation'] = orientation
 
         return output_data
